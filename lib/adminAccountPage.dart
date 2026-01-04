@@ -1,0 +1,47 @@
+import 'package:flutter/material.dart';
+
+class AdminAccountPage extends StatelessWidget {
+  final String adminName;
+
+  const AdminAccountPage({super.key, this.adminName = 'Admin'});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFFFBF8F3), Color(0xFFFFF8DC), Color(0xFFD7CCC8)],
+          ),
+        ),
+        child: SafeArea(
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Admin Account Page',
+                  style: const TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF3E2723),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Here you can manage all user accounts (customers, members, and admins).',
+                  style: TextStyle(fontSize: 16, color: Color(0xFF6D4C41)),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
