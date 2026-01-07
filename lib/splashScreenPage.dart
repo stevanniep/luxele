@@ -19,17 +19,17 @@ class _SplashScreenState extends State<SplashScreen>
     {
       'name': 'Diera Syafira Parinissa',
       'nim': '101012340096',
-      'image': 'assets/stev.jpg',
+      'image': 'assets/diera.jpg',
     },
     {
       'name': 'Citra Kusumadewi Sribawono',
       'nim': '101012340196',
-      'image': 'assets/stev.jpg',
+      'image': 'assets/citra.jpg',
     },
     {
       'name': 'Aulia Rahma',
-    'nim': '101012340340',
-    'image': 'assets/stev.jpg'
+      'nim': '101012340340',
+      'image': 'assets/aul.jpg'
     },
     {
       'name': 'Stevannie Pratama',
