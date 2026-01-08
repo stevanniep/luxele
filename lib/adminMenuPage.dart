@@ -15,14 +15,16 @@ class AdminMenuPage extends StatefulWidget {
 
 class _AdminMenuPageState extends State<AdminMenuPage> {
   List<Map<String, dynamic>> menus = [];
+  List<Map<String, dynamic>> filteredMenus = [];
   bool loading = true;
+
+  String search = '';
 
   bool showForm = false;
   Map<String, dynamic>? editingMenu;
 
-  final TextEditingController nameController = TextEditingController();
-  final TextEditingController priceController = TextEditingController();
-
+  late TextEditingController nameController;
+  late TextEditingController priceController;
   String? selectedCategory;
   bool isBestSeller = false;
   String? imageUrl;
@@ -39,135 +41,39 @@ class _AdminMenuPageState extends State<AdminMenuPage> {
   @override
   void initState() {
     super.initState();
-    selectedCategory = categories.first;
     _loadMenus();
+    nameController = TextEditingController();
+    priceController = TextEditingController();
+    selectedCategory = categories.first;
   }
 
-  // ================= LOAD MENU =================
   Future<void> _loadMenus() async {
-    try {
-      setState(() => loading = true);
-      final res = await supabase.from('menu').select().order('id');
-      menus = List<Map<String, dynamic>>.from(res);
-      setState(() => loading = false);
-    } catch (e) {
-      print('Error loading menus: $e');
-      setState(() => loading = false);
-    }
+    setState(() => loading = true);
+    final res = await supabase.from('menu').select().order('id');
+    menus = List<Map<String, dynamic>>.from(res);
+    _applyFilter();
+    setState(() => loading = false);
   }
 
-  // ================= IMAGE PICK =================
-  Future<void> _pickImageForPreview() async {
-    try {
-      final tempId = editingMenu?['id'] ?? DateTime.now().millisecondsSinceEpoch;
+  void _applyFilter() {
+    List<Map<String, dynamic>> result = [...menus];
 
-      final res = await FilePicker.platform.pickFiles(
-        type: FileType.image,
-        withData: true,
-      );
-
-      if (res == null || res.files.single.bytes == null) return;
-
-      Uint8List fileBytes = res.files.single.bytes!;
-      img.Image? original = img.decodeImage(fileBytes);
-      if (original != null) {
-        fileBytes = Uint8List.fromList(img.encodeJpg(original));
-      }
-
-      final filename = 'menu_$tempId.jpg';
-
-      await supabase.storage.from('menu').uploadBinary(
-            filename,
-            fileBytes,
-            fileOptions: const FileOptions(upsert: true),
-          );
-
-      final publicUrl = supabase.storage.from('menu').getPublicUrl(filename);
-
-      setState(() => imageUrl = publicUrl);
-    } catch (e) {
-      print('Error uploading image: $e');
-    }
-  }
-
-  // ================= SAVE MENU =================
-  Future<void> _saveMenu() async {
-    try {
-      final name = nameController.text.trim();
-      final price = double.tryParse(priceController.text) ?? 0;
-
-      if (name.isEmpty || price <= 0) {
-        _showSnackBar('Please fill all fields correctly');
-        return;
-      }
-
-      if (editingMenu == null) {
-        await supabase.from('menu').insert({
-          'name': name,
-          'price': price,
-          'category': selectedCategory,
-          'is_best_seller': isBestSeller,
-          'img_url': imageUrl,
-        });
-        _showSnackBar('Menu added successfully');
-      } else {
-        await supabase.from('menu').update({
-          'name': name,
-          'price': price,
-          'category': selectedCategory,
-          'is_best_seller': isBestSeller,
-          'img_url': imageUrl,
-        }).eq('id', editingMenu!['id']);
-        _showSnackBar('Menu updated successfully');
-      }
-
-      _resetForm();
-      await _loadMenus();
-    } catch (e) {
-      print('Error saving menu: $e');
-      _showSnackBar('Error saving menu');
-    }
-  }
-
-  // ================= SIMPLE DELETE (AFTER CASCADE) =================
-  Future<void> _deleteMenu(int id) async {
-    try {
-      // Konfirmasi sederhana
-      bool? confirm = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Delete Menu'),
-          content: const Text('Are you sure you want to delete this menu?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
+    if (search.isNotEmpty) {
+      result = result
+          .where(
+            (m) => (m['name'] ?? '').toString().toLowerCase().contains(
+              search.toLowerCase(),
             ),
-            TextButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Delete'),
-            ),
-          ],
-        ),
-      );
-
-      if (confirm != true) return;
-
-      // Hapus menu saja, data di po_menu akan terhapus otomatis karena CASCADE
-      await supabase.from('menu').delete().eq('id', id);
-      
-      _showSnackBar('Menu deleted successfully');
-      await _loadMenus();
-    } catch (e) {
-      print('Error deleting menu: $e');
-      _showSnackBar('Failed to delete menu');
+          )
+          .toList();
     }
+
+    setState(() => filteredMenus = result);
   }
 
-  // ================= RESET FORM =================
-  void _resetForm() {
+  void _openAddPanel() {
     setState(() {
-      showForm = false;
+      showForm = true;
       editingMenu = null;
       nameController.clear();
       priceController.clear();
@@ -177,164 +83,319 @@ class _AdminMenuPageState extends State<AdminMenuPage> {
     });
   }
 
-  // ================= HELPER FUNCTION =================
-  void _showSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        duration: const Duration(seconds: 2),
-      ),
-    );
+  void _openEditPanel(Map<String, dynamic> menu) {
+    setState(() {
+      showForm = true;
+      editingMenu = menu;
+      nameController.text = menu['name'] ?? '';
+      priceController.text = menu['price']?.toString() ?? '';
+      selectedCategory = menu['category'] ?? categories.first;
+      isBestSeller = menu['is_best_seller'] == true;
+      imageUrl = menu['img_url'];
+    });
   }
 
-  // ================= UI =================
+  Future<void> _pickImageForPreview() async {
+    final tempId = editingMenu?['id'] ?? DateTime.now().millisecondsSinceEpoch;
+
+    final res = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      withData: true,
+    );
+    if (res == null || res.files.single.bytes == null) return;
+
+    Uint8List bytes = res.files.single.bytes!;
+    img.Image? image = img.decodeImage(bytes);
+
+    if (image != null) {
+      image = img.copyResize(
+        image,
+        width: image.width,
+        height: (image.width * 0.75).toInt(), // 4:3
+      );
+      bytes = Uint8List.fromList(img.encodeJpg(image));
+    }
+
+    final filename = 'menu_$tempId.jpg';
+
+    await supabase.storage
+        .from('menu')
+        .uploadBinary(
+          filename,
+          bytes,
+          fileOptions: const FileOptions(upsert: true),
+        );
+
+    final url = supabase.storage.from('menu').getPublicUrl(filename);
+
+    if (editingMenu != null) {
+      await supabase
+          .from('menu')
+          .update({'img_url': url})
+          .eq('id', editingMenu!['id']);
+    }
+
+    setState(() => imageUrl = url);
+  }
+
+  Future<void> _saveMenu() async {
+    final name = nameController.text.trim();
+    final price = double.tryParse(priceController.text) ?? 0;
+
+    if (name.isEmpty) return;
+
+    final data = {
+      'name': name,
+      'price': price,
+      'category': selectedCategory,
+      'is_best_seller': isBestSeller,
+      'img_url': imageUrl,
+    };
+
+    if (editingMenu == null) {
+      await supabase.from('menu').insert(data);
+    } else {
+      await supabase.from('menu').update(data).eq('id', editingMenu!['id']);
+    }
+
+    setState(() {
+      showForm = false;
+      editingMenu = null;
+      imageUrl = null;
+    });
+
+    _loadMenus();
+  }
+
+  Future<void> _deleteMenu(int id) async {
+    await supabase.from('menu').delete().eq('id', id);
+    _loadMenus();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F1ED),
       appBar: AppBar(
-        title: const Text("Admin Menu"),
         backgroundColor: const Color(0xFF8D6E63),
+        title: Text(showForm ? 'Manage Menu' : 'Luxelle Menu'),
+        centerTitle: true,
       ),
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: const Color(0xFF8D6E63),
-        child: const Icon(Icons.add),
-        onPressed: () {
-          setState(() {
-            showForm = true;
-            editingMenu = null;
-            nameController.clear();
-            priceController.clear();
-            selectedCategory = categories.first;
-            isBestSeller = false;
-            imageUrl = null;
-          });
-        },
+      body: Column(
+        children: [
+          if (!showForm)
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                children: [
+                  TextField(
+                    decoration: InputDecoration(
+                      hintText: 'Search menu...',
+                      prefixIcon: const Icon(
+                        Icons.search,
+                        color: Color(0xFF8D6E63),
+                      ),
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                    onChanged: (v) {
+                      search = v;
+                      _applyFilter();
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: _openAddPanel,
+                      icon: const Icon(Icons.add, color: Colors.white),
+                      label: const Text(
+                        'Add Menu',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF8D6E63),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          Expanded(child: showForm ? _buildForm() : _buildGrid()),
+        ],
       ),
-      body: loading
-          ? const Center(child: CircularProgressIndicator())
-          : showForm
-              ? _menuForm()
-              : _menuList(),
     );
   }
 
-  // ================= MENU LIST =================
-  Widget _menuList() {
-    return ListView.builder(
+  Widget _buildForm() {
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(12),
-      itemCount: menus.length,
-      itemBuilder: (context, index) {
-        final menu = menus[index];
-        return Card(
-          child: ListTile(
-            leading: menu['img_url'] != null
-                ? Image.network(menu['img_url'], width: 50, height: 50)
-                : const Icon(Icons.cake),
-            title: Text(menu['name']),
-            subtitle: Text("Rp ${menu['price']}"),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.edit),
-                  onPressed: () {
-                    setState(() {
-                      editingMenu = menu;
-                      nameController.text = menu['name'];
-                      priceController.text = menu['price'].toString();
-                      selectedCategory = menu['category'];
-                      isBestSeller = menu['is_best_seller'] ?? false;
-                      imageUrl = menu['img_url'];
-                      showForm = true;
-                    });
-                  },
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            GestureDetector(
+              onTap: _pickImageForPreview,
+              child: Container(
+                width: double.infinity,
+                height: 260, // ✅ diperbesar
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  color: Colors.grey[200],
+                  image: imageUrl != null
+                      ? DecorationImage(
+                          image: NetworkImage(imageUrl!),
+                          fit: BoxFit.cover,
+                        )
+                      : null,
                 ),
-                IconButton(
-                  icon: const Icon(Icons.delete),
-                  onPressed: () => _deleteMenu(menu['id']),
-                ),
-              ],
+                child: imageUrl == null
+                    ? const Center(child: Icon(Icons.add_a_photo, size: 48))
+                    : null,
+              ),
             ),
+            const SizedBox(height: 16),
+            _inputField('Name', nameController),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              value: selectedCategory,
+              items: categories
+                  .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                  .toList(),
+              onChanged: (v) => setState(() => selectedCategory = v),
+              decoration: const InputDecoration(border: OutlineInputBorder()),
+            ),
+            const SizedBox(height: 12),
+            _inputField(
+              'Price',
+              priceController,
+              keyboardType: TextInputType.number,
+            ),
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              value: isBestSeller,
+              onChanged: (v) => setState(() => isBestSeller = v ?? false),
+              title: const Text('Best Seller'),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _saveMenu,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF8D6E63),
+                ),
+                child: const Text(
+                  'Save',
+                  style: TextStyle(color: Colors.white),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGrid() {
+    return GridView.builder(
+      padding: const EdgeInsets.all(12),
+      itemCount: filteredMenus.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        mainAxisSpacing: 12,
+        crossAxisSpacing: 12,
+        childAspectRatio: 0.85,
+      ),
+      itemBuilder: (_, i) {
+        final m = filteredMenus[i];
+        return Card(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start, // ✅ rata kiri
+            children: [
+              Expanded(
+                child: m['img_url'] != null
+                    ? ClipRRect(
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(16),
+                        ),
+                        child: Image.network(
+                          m['img_url'],
+                          fit: BoxFit.cover,
+                          width: double.infinity,
+                        ),
+                      )
+                    : const Center(child: Icon(Icons.image, size: 40)),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start, // ✅ rata kiri
+                  children: [
+                    Text(
+                      m['name'] ?? '',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 2),
+                    Text('Rp ${m['price']}'),
+                    const SizedBox(height: 6),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        IconButton(
+                          icon: Icon(
+                            Icons.edit,
+                            color: Colors.amber.withOpacity(0.8),
+                          ),
+                          onPressed: () => _openEditPanel(m),
+                        ),
+                        IconButton(
+                          icon: Icon(
+                            Icons.delete,
+                            color: Colors.red.withOpacity(0.8),
+                          ),
+                          onPressed: () => _deleteMenu(m['id']),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         );
       },
     );
   }
 
-  // ================= FORM =================
-  Widget _menuForm() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        children: [
-          Text(
-            editingMenu == null ? 'Add Menu' : 'Edit Menu',
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 16),
-
-          TextField(
-            controller: nameController,
-            decoration: const InputDecoration(labelText: 'Menu Name'),
-          ),
-          const SizedBox(height: 12),
-
-          TextField(
-            controller: priceController,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(labelText: 'Price'),
-          ),
-          const SizedBox(height: 12),
-
-          DropdownButtonFormField<String>(
-            value: selectedCategory,
-            items: categories
-                .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-                .toList(),
-            onChanged: (v) => setState(() => selectedCategory = v),
-            decoration: const InputDecoration(labelText: 'Category'),
-          ),
-          const SizedBox(height: 12),
-
-          SwitchListTile(
-            title: const Text('Best Seller'),
-            value: isBestSeller,
-            onChanged: (v) => setState(() => isBestSeller = v),
-          ),
-
-          ElevatedButton.icon(
-            icon: const Icon(Icons.image),
-            label: const Text('Upload Image'),
-            onPressed: _pickImageForPreview,
-          ),
-
-          if (imageUrl != null)
-            Padding(
-              padding: const EdgeInsets.all(10),
-              child: Image.network(imageUrl!, height: 120),
-            ),
-
-          const SizedBox(height: 20),
-
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: _saveMenu,
-                  child: const Text('Save'),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: _resetForm,
-                  child: const Text('Cancel'),
-                ),
-              ),
-            ],
-          ),
-        ],
+  Widget _inputField(
+    String label,
+    TextEditingController c, {
+    TextInputType keyboardType = TextInputType.text,
+  }) {
+    return TextField(
+      controller: c,
+      keyboardType: keyboardType,
+      decoration: InputDecoration(
+        labelText: label,
+        filled: true,
+        fillColor: Colors.white,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
       ),
     );
   }
